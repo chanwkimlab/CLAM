@@ -205,20 +205,31 @@ def seg_and_patch(source, save_dir, patch_save_dir, mask_save_dir, stitch_save_d
 				raise ValueError("If patch_spacing is not None, patch_level must be 0.")
 
 			print(f"  Reading MPP of slide {WSI_object.name}")
-            mppx = WSI_object.wsi.properties.get(openslide.PROPERTY_NAME_MPP_X, None)
-            mppy = WSI_object.wsi.properties.get(openslide.PROPERTY_NAME_MPP_Y, None)
+			mppx = WSI_object.wsi.properties.get(openslide.PROPERTY_NAME_MPP_X, None)
+			mppy = WSI_object.wsi.properties.get(openslide.PROPERTY_NAME_MPP_Y, None)
+
+			if (mppx is None or mppy is None) and WSI_object.wsi.properties.get("openslide.vendor") == "generic-tiff" \
+					and WSI_object.wsi.properties.get("tiff.ResolutionUnit") == "centimeter":
+				# Generic TIFFs (e.g. some CPTAC scans) carry only the TIFF resolution tags,
+				# in pixels per centimeter, instead of OpenSlide's MPP properties.
+				try:
+					mppx = 10000.0 / float(WSI_object.wsi.properties["tiff.XResolution"])
+					mppy = 10000.0 / float(WSI_object.wsi.properties["tiff.YResolution"])
+					print(f"  MPP derived from the TIFF resolution tags: {mppx}, {mppy}")
+				except (KeyError, ValueError, ZeroDivisionError):
+					mppx = mppy = None
 
 			if mppx is None or mppy is None:
 				print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
 				print(f"!!!!!!!!!! Cannot read MPP of slide: {WSI_object.name}")
 				print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-                print(
-                    openslide.PROPERTY_NAME_MPP_X,
-                    openslide.PROPERTY_NAME_MPP_Y,
-                    WSI_object.wsi.properties,
-                )
-                # raise RuntimeError(f"Cannot read MPP of slide: {WSI_object.name}")
-                df.loc[idx, "status"] = "failed_mpp"
+				print(
+					openslide.PROPERTY_NAME_MPP_X,
+					openslide.PROPERTY_NAME_MPP_Y,
+					WSI_object.wsi.properties,
+				)
+				# raise RuntimeError(f"Cannot read MPP of slide: {WSI_object.name}")
+				df.loc[idx, "status"] = "failed_mpp"
 				continue
 			try:
 				mppx = float(mppx)
@@ -227,7 +238,7 @@ def seg_and_patch(source, save_dir, patch_save_dir, mask_save_dir, stitch_save_d
 				print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
 				print(f"!!!!!!!!!! Cannot read MPP of slide: {WSI_object.name}")
 				print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-                df.loc[idx, "status"] = "failed_mpp"
+				df.loc[idx, "status"] = "failed_mpp"
 				continue
 			mpp = (mppx + mppy) / 2
 			patch_size = orig_patch_size * patch_spacing / mpp
